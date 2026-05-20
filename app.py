@@ -309,10 +309,15 @@ async def run_scrape(contract_lengths, price_min, price_max):
     """Main async scrape orchestrator"""
     all_deals = []
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
+        import shutil, os
+        system_chromium = shutil.which("chromium") or shutil.which("chromium-browser") or os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
+        launch_kwargs = dict(
             headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
         )
+        if system_chromium:
+            launch_kwargs["executable_path"] = system_chromium
+        browser = await p.chromium.launch(**launch_kwargs)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 900}
