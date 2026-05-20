@@ -41,22 +41,41 @@ h1, h2, h3 { font-family: 'Syne', sans-serif; }
 # ── Constants ─────────────────────────────────────────────────────────────────
 NETWORKS = ["Three", "Vodafone", "SMARTY", "TalkMobile", "VOXI", "iD Mobile", "Lebara", "GiffGaff", "Spusu", "O2", "Sky"]
 
+# Aliases: alternate names sites use → canonical name
+NETWORK_ALIASES = {
+    "giffgaff": "GiffGaff",
+    "gifgaf": "GiffGaff",
+    "id mobile": "iD Mobile",
+    "idmobile": "iD Mobile",
+    "talkmobile": "TalkMobile",
+    "talk mobile": "TalkMobile",
+    "smarty": "SMARTY",
+    "voxi": "VOXI",
+    "spusu": "Spusu",
+    "three": "Three",
+    "vodafone": "Vodafone",
+    "lebara": "Lebara",
+    "o2": "O2",
+    "sky": "Sky",
+    "sky mobile": "Sky",
+}
+
 # URLs keyed by contract length (months)
 URLS = {
     1: {
         "uSwitch": "https://www.uswitch.com/mobiles/compare/sim_only_deals/?contract_length=1",
-        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/30-day-sim-only/",
-        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/?contractLength=1month",
+        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/?contractLengths=1&minMonthlyCost=0&maxMonthlyCost=85&sortBy=TotalContractCost",
+        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
     },
     12: {
         "uSwitch": "https://www.uswitch.com/mobiles/compare/sim_only_deals/?contract_length=12",
-        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/",
-        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/?contractLength=12months",
+        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/?contractLengths=12&minMonthlyCost=0&maxMonthlyCost=85&sortBy=TotalContractCost",
+        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
     },
     24: {
         "uSwitch": "https://www.uswitch.com/mobiles/compare/sim_only_deals/?contract_length=24",
-        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/",
-        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/?contractLength=24months",
+        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/?contractLengths=24&minMonthlyCost=0&maxMonthlyCost=85&sortBy=TotalContractCost",
+        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
     },
 }
 
@@ -74,20 +93,23 @@ def gb_color(gb_val, all_vals):
     return "00B050" if ratio >= 0.66 else ("FFC000" if ratio >= 0.33 else "FF0000")
 
 # ── ScrapingBee fetch ─────────────────────────────────────────────────────────
-def fetch_with_scrapingbee(url, api_key, wait_ms=8000):
+def fetch_with_scrapingbee(url, api_key, wait_ms=8000, js_snippet=None):
     """Fetch a URL via ScrapingBee with JS rendering and premium proxies."""
     try:
+        params = {
+            "api_key": api_key,
+            "url": url,
+            "render_js": "true",
+            "premium_proxy": "true",
+            "country_code": "gb",
+            "wait": str(wait_ms),
+            "block_ads": "true",
+        }
+        if js_snippet:
+            params["js_snippet"] = js_snippet
         resp = requests.get(
             "https://app.scrapingbee.com/api/v1/",
-            params={
-                "api_key": api_key,
-                "url": url,
-                "render_js": "true",
-                "premium_proxy": "true",
-                "country_code": "gb",
-                "wait": str(wait_ms),
-                "block_ads": "true",
-            },
+            params=params,
             timeout=90,
         )
         status = resp.status_code
@@ -145,7 +167,9 @@ def parse_deals_from_html(html, source, contract_months):
         if net_matches:
             price_pos = min(400, pm.start())  # price position within window
             closest = min(net_matches, key=lambda m: abs(m.start() - price_pos))
-            network = closest.group(0).strip()
+            raw = closest.group(0).strip()
+            # Normalise to canonical name via aliases
+            network = NETWORK_ALIASES.get(raw.lower(), raw)
         else:
             network = "Unknown"
 
@@ -173,9 +197,12 @@ def run_scrape(api_key, contract_lengths, price_min, price_max):
         label = CONTRACT_LABELS[months]
         st.session_state.scrape_log.append(f"▶ Scraping {label} contracts...")
 
+        # JS snippet to scroll CTM page and trigger deal loading
+        ctm_js = "d2luZG93LnNjcm9sbFRvKDAsNTAwKTs="  # base64: window.scrollTo(0,500);
+
         for source, url in URLS[months].items():
             st.session_state.scrape_log.append(f"  → Fetching {source}...")
-            wait = 12000 if source == "CompareTheMarket" else 8000
+            wait = 14000 if source == "CompareTheMarket" else 8000
             html, err = fetch_with_scrapingbee(url, api_key, wait_ms=wait)
 
             if html:
