@@ -41,10 +41,23 @@ h1, h2, h3 { font-family: 'Syne', sans-serif; }
 # ── Constants ─────────────────────────────────────────────────────────────────
 NETWORKS = ["Three", "Vodafone", "SMARTY", "TalkMobile", "VOXI", "iD Mobile", "Lebara", "GiffGaff", "Spusu", "O2", "Sky"]
 
+# URLs keyed by contract length (months)
 URLS = {
-    "uSwitch": "https://www.uswitch.com/mobiles/sim-only-deals/",
-    "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only-deals/",
-    "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
+    1: {
+        "uSwitch": "https://www.uswitch.com/mobiles/compare/sim_only_deals/?contract_length=1",
+        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/30-day-sim-only/",
+        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
+    },
+    12: {
+        "uSwitch": "https://www.uswitch.com/mobiles/compare/sim_only_deals/?contract_length=12",
+        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/",
+        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
+    },
+    24: {
+        "uSwitch": "https://www.uswitch.com/mobiles/compare/sim_only_deals/?contract_length=24",
+        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/",
+        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
+    },
 }
 
 CONTRACT_LABELS = {1: "1M", 12: "12M", 24: "24M"}
@@ -72,7 +85,7 @@ def fetch_with_scrapingbee(url, api_key):
                 "render_js": "true",
                 "premium_proxy": "true",
                 "country_code": "gb",
-                "wait": "3000",
+                "wait": "6000",
                 "block_ads": "true",
             },
             timeout=60,
@@ -153,7 +166,7 @@ def run_scrape(api_key, contract_lengths, price_min, price_max):
         label = CONTRACT_LABELS[months]
         st.session_state.scrape_log.append(f"▶ Scraping {label} contracts...")
 
-        for source, url in URLS.items():
+        for source, url in URLS[months].items():
             st.session_state.scrape_log.append(f"  → Fetching {source}...")
             html, err = fetch_with_scrapingbee(url, api_key)
 
