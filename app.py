@@ -61,21 +61,16 @@ NETWORK_ALIASES = {
 }
 
 # URLs keyed by contract length (months)
+# CTM and uSwitch disabled until credits replenished — MSM only for concept demo
 URLS = {
     1: {
-        "uSwitch": "https://www.uswitch.com/mobiles/compare/sim_only_deals/?contract_length=1",
-        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/?contractLengths=1&minMonthlyCost=0&maxMonthlyCost=85&sortBy=TotalContractCost",
-        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
+        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/30-day-sim-only/",
     },
     12: {
-        "uSwitch": "https://www.uswitch.com/mobiles/compare/sim_only_deals/?contract_length=12",
-        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/?contractLengths=12&minMonthlyCost=0&maxMonthlyCost=85&sortBy=TotalContractCost",
-        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
+        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/12-month-sim-only/",
     },
     24: {
-        "uSwitch": "https://www.uswitch.com/mobiles/compare/sim_only_deals/?contract_length=24",
-        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/?contractLengths=24&minMonthlyCost=0&maxMonthlyCost=85&sortBy=TotalContractCost",
-        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
+        "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/",  # No dedicated 24M page on MSM
     },
 }
 
@@ -399,7 +394,7 @@ if run_btn:
         st.session_state.deals = []
 
         # Credit estimate
-        total_requests = len(contract_lengths) * 3
+        total_requests = len(contract_lengths) * 1  # MSM only for now
         st.info(f"ℹ️ This audit will use approximately **{total_requests * 75} credits** ({total_requests} pages × 75 credits each with JS + premium proxy).")
 
         with st.spinner("Scraping in progress — this takes 1-2 minutes..."):
