@@ -132,46 +132,100 @@ SLUG_NETWORK_MAP = {
     "o2": "O2", "skymobile": "Sky", "sky": "Sky",
 }
 
-def parse_msm_slugs(html, contract_months):
+def parse_msm_css(html, contract_months):
+    """
+    Parse MSM deals using deal-info__value/label CSS classes.
+    Structure per deal: value=GB, label="of 5G data" | value=N, label="month contract" | value=£X, label="monthly cost"
+    Network name appears near the deal card — extracted from surrounding text.
+    """
+    from html.parser import HTMLParser
+
     deals = []
-    slugs = re.findall('data-slug="([^"]+)"', html)
+
+    # Extract all deal cards — each card contains three deal-info__wrapper divs
+    # Find all deal-info__value--highlight spans and their labels
+    value_pat = r'deal-info__value--highlight[^>]*>([^<]+)<'
+    label_pat = r'deal-info__label--highlight[^>]*>([^<]+)<'
+
+    values = re.findall(value_pat, html)
+    labels = re.findall(label_pat, html)
+
+    # Also get network names from data-slug if available
+    slug_pat = r'data-slug="([^"]+)"'
+    slugs = re.findall(slug_pat, html)
+
+    # Pair values with labels — they appear in groups of 3 per deal: data, contract, price
+    triplets = []
+    for i in range(0, min(len(values), len(labels)) - 2, 3):
+        triplets.append({
+            "v0": values[i].strip(),   "l0": labels[i].strip(),
+            "v1": values[i+1].strip(), "l1": labels[i+1].strip(),
+            "v2": values[i+2].strip(), "l2": labels[i+2].strip(),
+        })
+
     seen = set()
-    for slug in slugs:
-        parts = slug.split("-")
-        if len(parts) < 4:
-            continue
+    for idx, t in enumerate(triplets):
         try:
-            month_idx = None
-            for i, p in enumerate(parts):
-                if p in ("1","12","24","36") and i > 0:
-                    month_idx = i
-                    break
-            if month_idx is None or int(parts[month_idx]) != contract_months:
+            gb_val = None
+            months_val = None
+            price_val = None
+
+            for v, l in [(t["v0"],t["l0"]),(t["v1"],t["l1"]),(t["v2"],t["l2"])]:
+                l_lower = l.lower()
+                if "data" in l_lower or "gb" in v.lower() or "unlimited" in v.lower():
+                    if v.lower() in ("unlimited","unltd"):
+                        gb_val = "Unlimited"
+                    else:
+                        # strip non-numeric
+                        num = re.sub(r"[^0-9]", "", v)
+                        if num:
+                            gb_val = int(num)
+                elif "month" in l_lower or "contract" in l_lower:
+                    num = re.sub(r"[^0-9]", "", v)
+                    if num:
+                        months_val = int(num)
+                elif "cost" in l_lower or "mth" in v.lower() or "£" in v:
+                    num = re.sub(r"[^0-9.]", "", v)
+                    if num:
+                        price_val = float(num)
+
+            if gb_val is None or months_val is None or price_val is None:
                 continue
-            net_raw = "".join(parts[:month_idx]).lower()
-            network = None
-            for key in sorted(SLUG_NETWORK_MAP.keys(), key=len, reverse=True):
-                if key in net_raw:
-                    network = SLUG_NETWORK_MAP[key]
-                    break
-            if not network:
-                network = parts[0].title()
-            data_raw = parts[month_idx + 1] if month_idx + 1 < len(parts) else None
-            if not data_raw:
+            if months_val != contract_months:
                 continue
-            if data_raw.lower() in ("unlimited","unltd"):
-                gb, gb_num = "Unlimited", 99999
-            else:
-                mb = int(data_raw)
-                gb = mb // 1000
-                gb_num = gb
-                if gb == 0:
-                    continue
-            k = (network, str(gb))
-            if k in seen:
+            if price_val < 4 or price_val > 25:
                 continue
-            seen.add(k)
-            deals.append({"network": network, "gb": gb, "gb_num": gb_num, "slug": slug})
+
+            # Get network from corresponding slug if available
+            network = "Unknown"
+            if idx < len(slugs):
+                slug = slugs[idx]
+                parts = slug.split("-")
+                net_raw = ""
+                for i2, p in enumerate(parts):
+                    if p in ("1","12","24","36") and i2 > 0:
+                        net_raw = "".join(parts[:i2]).lower()
+                        break
+                for key in sorted(SLUG_NETWORK_MAP.keys(), key=len, reverse=True):
+                    if key in net_raw:
+                        network = SLUG_NETWORK_MAP[key]
+                        break
+                if network == "Unknown" and parts:
+                    network = parts[0].title()
+
+            gb_num = 99999 if gb_val == "Unlimited" else gb_val
+            key = (network, str(gb_val), price_val)
+            if key in seen:
+                continue
+            seen.add(key)
+            deals.append({
+                "source": "MoneySuperMarket",
+                "network": network,
+                "price": price_val,
+                "gb": gb_val,
+                "gb_num": gb_num,
+                "contract": contract_months,
+            })
         except Exception:
             continue
     return deals
@@ -183,35 +237,18 @@ def parse_deals_from_html(html, source, contract_months):
         return deals
 
     if source == "MoneySuperMarket":
-        slug_deals = parse_msm_slugs(html, contract_months)
-        if slug_deals:
-            price_pat = r'£(\d+(?:\.\d{2})?)'
-            for sd in slug_deals:
-                slug_pos = html.find(sd["slug"])
-                if slug_pos == -1:
-                    continue
-                window = html[slug_pos: slug_pos + 2000]
-                pm = re.search(price_pat, window)
-                if not pm:
-                    continue
-                price_val = float(pm.group(1))
-                if price_val < 4 or price_val > 25:
-                    continue
-                deals.append({
-                    "source": source, "network": sd["network"],
-                    "price": price_val, "gb": sd["gb"],
-                    "gb_num": sd["gb_num"], "contract": contract_months,
-                })
-            if deals:
-                return deals
+        css_deals = parse_msm_css(html, contract_months)
+        if css_deals:
+            return css_deals
 
+    # Fallback regex parser (uSwitch etc.)
     clean = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL|re.IGNORECASE)
     clean = re.sub(r'<style[^>]*>.*?</style>', '', clean, flags=re.DOTALL|re.IGNORECASE)
     clean = re.sub(r'<[^>]+>', ' ', clean)
     clean = re.sub(r'\s+', ' ', clean)
-    price_pattern = r'£(\d+(?:\.\d{2})?)'
-    gb_pattern = r'(\d+)\s*GB|(\bUnlimited\b)'
-    network_pattern = '|'.join(re.escape(n) for n in NETWORKS)
+    price_pattern = r"£(\d+(?:\.\d{2})?)"
+    gb_pattern = r"(\d+)\s*GB|(\bUnlimited\b)"
+    network_pattern = "|".join(re.escape(n) for n in NETWORKS)
     price_matches = list(re.finditer(price_pattern, clean))
     seen = set()
     for pm in price_matches:
