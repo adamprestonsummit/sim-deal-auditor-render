@@ -122,69 +122,127 @@ def fetch_with_scrapingbee(url, api_key, wait_ms=8000, js_snippet=None):
         return None, f"Exception: {e}"
 
 # ── HTML parser ───────────────────────────────────────────────────────────────
+
+SLUG_NETWORK_MAP = {
+    "threemobile": "Three", "three": "Three",
+    "vodafone": "Vodafone", "smarty": "SMARTY",
+    "talkmobile": "TalkMobile", "voxi": "VOXI",
+    "idmobile": "iD Mobile", "lebara": "Lebara",
+    "giffgaff": "GiffGaff", "spusu": "Spusu",
+    "o2": "O2", "skymobile": "Sky", "sky": "Sky",
+}
+
+def parse_msm_slugs(html, contract_months):
+    deals = []
+    slugs = re.findall('data-slug="([^"]+)"', html)
+    seen = set()
+    for slug in slugs:
+        parts = slug.split("-")
+        if len(parts) < 4:
+            continue
+        try:
+            month_idx = None
+            for i, p in enumerate(parts):
+                if p in ("1","12","24","36") and i > 0:
+                    month_idx = i
+                    break
+            if month_idx is None or int(parts[month_idx]) != contract_months:
+                continue
+            net_raw = "".join(parts[:month_idx]).lower()
+            network = None
+            for key in sorted(SLUG_NETWORK_MAP.keys(), key=len, reverse=True):
+                if key in net_raw:
+                    network = SLUG_NETWORK_MAP[key]
+                    break
+            if not network:
+                network = parts[0].title()
+            data_raw = parts[month_idx + 1] if month_idx + 1 < len(parts) else None
+            if not data_raw:
+                continue
+            if data_raw.lower() in ("unlimited","unltd"):
+                gb, gb_num = "Unlimited", 99999
+            else:
+                mb = int(data_raw)
+                gb = mb // 1000
+                gb_num = gb
+                if gb == 0:
+                    continue
+            k = (network, str(gb))
+            if k in seen:
+                continue
+            seen.add(k)
+            deals.append({"network": network, "gb": gb, "gb_num": gb_num, "slug": slug})
+        except Exception:
+            continue
+    return deals
+
+
 def parse_deals_from_html(html, source, contract_months):
     deals = []
     if not html:
         return deals
 
-    clean = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
-    clean = re.sub(r'<style[^>]*>.*?</style>', '', clean, flags=re.DOTALL | re.IGNORECASE)
+    if source == "MoneySuperMarket":
+        slug_deals = parse_msm_slugs(html, contract_months)
+        if slug_deals:
+            price_pat = r'£(\d+(?:\.\d{2})?)'
+            for sd in slug_deals:
+                slug_pos = html.find(sd["slug"])
+                if slug_pos == -1:
+                    continue
+                window = html[slug_pos: slug_pos + 2000]
+                pm = re.search(price_pat, window)
+                if not pm:
+                    continue
+                price_val = float(pm.group(1))
+                if price_val < 4 or price_val > 25:
+                    continue
+                deals.append({
+                    "source": source, "network": sd["network"],
+                    "price": price_val, "gb": sd["gb"],
+                    "gb_num": sd["gb_num"], "contract": contract_months,
+                })
+            if deals:
+                return deals
+
+    clean = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL|re.IGNORECASE)
+    clean = re.sub(r'<style[^>]*>.*?</style>', '', clean, flags=re.DOTALL|re.IGNORECASE)
     clean = re.sub(r'<[^>]+>', ' ', clean)
     clean = re.sub(r'\s+', ' ', clean)
-
     price_pattern = r'£(\d+(?:\.\d{2})?)'
     gb_pattern = r'(\d+)\s*GB|(\bUnlimited\b)'
     network_pattern = '|'.join(re.escape(n) for n in NETWORKS)
-
     price_matches = list(re.finditer(price_pattern, clean))
     seen = set()
-
     for pm in price_matches:
         price_val = float(pm.group(1))
         if price_val < 4 or price_val > 25:
             continue
-
-        # Wide window: 400 chars before and after price to catch network names on either side
-        window = clean[max(0, pm.start() - 400): pm.start() + 400]
-
+        window = clean[max(0, pm.start()-400): pm.start()+400]
         gb_match = re.search(gb_pattern, window, re.IGNORECASE)
         if not gb_match:
             continue
-
-        if gb_match.group(2):
-            gb, gb_num = "Unlimited", 99999
-        else:
-            gb = int(gb_match.group(1))
-            gb_num = gb
-
-        # Find network — prefer closest match to price position
+        gb = "Unlimited" if gb_match.group(2) else int(gb_match.group(1))
+        gb_num = 99999 if gb == "Unlimited" else gb
         net_matches = list(re.finditer(network_pattern, window, re.IGNORECASE))
         if net_matches:
-            price_pos = min(400, pm.start())  # price position within window
-            closest = min(net_matches, key=lambda m: abs(m.start() - price_pos))
+            price_pos = min(400, pm.start())
+            closest = min(net_matches, key=lambda m: abs(m.start()-price_pos))
             raw = closest.group(0).strip()
-            # Normalise to canonical name via aliases
             network = NETWORK_ALIASES.get(raw.lower(), raw)
         else:
             network = "Unknown"
-
         key = (source, network, price_val, str(gb))
         if key in seen:
             continue
         seen.add(key)
-
         deals.append({
-            "source": source,
-            "network": network,
-            "price": price_val,
-            "gb": gb,
-            "gb_num": gb_num,
-            "contract": contract_months,
+            "source": source, "network": network, "price": price_val,
+            "gb": gb, "gb_num": gb_num, "contract": contract_months,
         })
-
     return deals
 
-# ── Main scrape orchestrator ──────────────────────────────────────────────────
+
 def run_scrape(api_key, contract_lengths, price_min, price_max):
     all_deals = []
 
