@@ -77,12 +77,19 @@ def fetch_with_scrapingbee(url, api_key):
             },
             timeout=60,
         )
-        if resp.status_code == 200:
-            return resp.text
+        status = resp.status_code
+        if status == 200:
+            return resp.text, None
         else:
-            return None
+            # Return error detail for logging
+            try:
+                err = resp.json()
+                msg = err.get("message", str(err))
+            except:
+                msg = resp.text[:200]
+            return None, f"HTTP {status}: {msg}"
     except Exception as e:
-        return None
+        return None, f"Exception: {e}"
 
 # ── HTML parser ───────────────────────────────────────────────────────────────
 def parse_deals_from_html(html, source, contract_months):
@@ -148,16 +155,19 @@ def run_scrape(api_key, contract_lengths, price_min, price_max):
 
         for source, url in URLS.items():
             st.session_state.scrape_log.append(f"  → Fetching {source}...")
-            html = fetch_with_scrapingbee(url, api_key)
+            html, err = fetch_with_scrapingbee(url, api_key)
 
             if html:
+                # Save first 500 chars of clean text for debug
+                clean_preview = re.sub(r"<[^>]+>", " ", html)
+                clean_preview = re.sub(r"\s+", " ", clean_preview)[:300]
+                st.session_state.scrape_log.append(f"  📄 Preview: {clean_preview}")
                 deals = parse_deals_from_html(html, source, months)
-                # Filter by price range
                 deals = [d for d in deals if price_min <= d["price"] <= price_max]
                 all_deals.extend(deals)
                 st.session_state.scrape_log.append(f"  ✓ {source}: {len(deals)} deals found")
             else:
-                st.session_state.scrape_log.append(f"  ✗ {source}: failed to fetch")
+                st.session_state.scrape_log.append(f"  ✗ {source}: {err}")
 
             time.sleep(1)  # polite delay between requests
 
