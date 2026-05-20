@@ -46,17 +46,17 @@ URLS = {
     1: {
         "uSwitch": "https://www.uswitch.com/mobiles/compare/sim_only_deals/?contract_length=1",
         "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/30-day-sim-only/",
-        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
+        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/?contractLength=1month",
     },
     12: {
         "uSwitch": "https://www.uswitch.com/mobiles/compare/sim_only_deals/?contract_length=12",
         "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/",
-        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
+        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/?contractLength=12months",
     },
     24: {
         "uSwitch": "https://www.uswitch.com/mobiles/compare/sim_only_deals/?contract_length=24",
         "MoneySuperMarket": "https://www.moneysupermarket.com/mobile-phones/sim-only/",
-        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/",
+        "CompareTheMarket": "https://www.comparethemarket.com/mobile-phones/sim-only/?contractLength=24months",
     },
 }
 
@@ -74,7 +74,7 @@ def gb_color(gb_val, all_vals):
     return "00B050" if ratio >= 0.66 else ("FFC000" if ratio >= 0.33 else "FF0000")
 
 # ── ScrapingBee fetch ─────────────────────────────────────────────────────────
-def fetch_with_scrapingbee(url, api_key):
+def fetch_with_scrapingbee(url, api_key, wait_ms=8000):
     """Fetch a URL via ScrapingBee with JS rendering and premium proxies."""
     try:
         resp = requests.get(
@@ -85,10 +85,10 @@ def fetch_with_scrapingbee(url, api_key):
                 "render_js": "true",
                 "premium_proxy": "true",
                 "country_code": "gb",
-                "wait": "6000",
+                "wait": str(wait_ms),
                 "block_ads": "true",
             },
-            timeout=60,
+            timeout=90,
         )
         status = resp.status_code
         if status == 200:
@@ -127,7 +127,8 @@ def parse_deals_from_html(html, source, contract_months):
         if price_val < 4 or price_val > 25:
             continue
 
-        window = clean[max(0, pm.start() - 100): pm.start() + 400]
+        # Wide window: 400 chars before and after price to catch network names on either side
+        window = clean[max(0, pm.start() - 400): pm.start() + 400]
 
         gb_match = re.search(gb_pattern, window, re.IGNORECASE)
         if not gb_match:
@@ -139,8 +140,14 @@ def parse_deals_from_html(html, source, contract_months):
             gb = int(gb_match.group(1))
             gb_num = gb
 
-        net_match = re.search(network_pattern, window, re.IGNORECASE)
-        network = net_match.group(0).strip() if net_match else "Unknown"
+        # Find network — prefer closest match to price position
+        net_matches = list(re.finditer(network_pattern, window, re.IGNORECASE))
+        if net_matches:
+            price_pos = min(400, pm.start())  # price position within window
+            closest = min(net_matches, key=lambda m: abs(m.start() - price_pos))
+            network = closest.group(0).strip()
+        else:
+            network = "Unknown"
 
         key = (source, network, price_val, str(gb))
         if key in seen:
@@ -168,7 +175,8 @@ def run_scrape(api_key, contract_lengths, price_min, price_max):
 
         for source, url in URLS[months].items():
             st.session_state.scrape_log.append(f"  → Fetching {source}...")
-            html, err = fetch_with_scrapingbee(url, api_key)
+            wait = 12000 if source == "CompareTheMarket" else 8000
+            html, err = fetch_with_scrapingbee(url, api_key, wait_ms=wait)
 
             if html:
                 # Save first 500 chars of clean text for debug
