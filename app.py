@@ -124,29 +124,40 @@ def fetch_with_scrapingbee(url, api_key, wait_ms=8000, js_snippet=None):
 # ── HTML parser ───────────────────────────────────────────────────────────────
 
 # Map logo image filenames to network names
+# Exact filename matches from MSM logo URLs (cdndtl.co.uk/mobile/providers/)
 LOGO_NETWORK_MAP = {
-    "/3.": "Three", "/3/": "Three", "three": "Three",
-    "vodafone": "Vodafone",
-    "smarty": "SMARTY",
-    "talkmobile": "TalkMobile", "talk-mobile": "TalkMobile",
-    "voxi": "VOXI",
-    "id-mobile": "iD Mobile", "idmobile": "iD Mobile", "id_mobile": "iD Mobile",
-    "lebara": "Lebara",
-    "giffgaff": "GiffGaff",
-    "spusu": "Spusu",
-    "/o2": "O2", "o2.png": "O2",
-    "sky": "Sky",
-    "tesco": "Tesco", "asda": "Asda",
-    "virginmobile": "Virgin", "virgin": "Virgin",
+    "3.png": "Three",
+    "vodafone.png": "Vodafone",
+    "smarty.png": "SMARTY",
+    "talkmobile-powered.png": "TalkMobile",
+    "voxi-logo.png": "VOXI",
+    "id-powered-by-three.png": "iD Mobile",
+    "giffgaff-powered.png": "GiffGaff",
+    "lebara-logo.png": "Lebara",
+    "spusu.png": "Spusu",
+    "o2.png": "O2",
+    "sky_brand.png": "Sky",
+    "tesco": "Tesco",
+    "asda": "Asda",
+    "virgin": "Virgin",
 }
 
 def network_from_logo(img_src):
-    """Extract network name from logo image URL."""
+    """Extract network name from logo image URL using exact filename match."""
     src = img_src.lower()
+    # Extract just the filename from the URL path
+    try:
+        filename = src.split("/")[-1].split("?")[0]  # e.g. "3.png" or "voxi-logo.png"
+    except Exception:
+        filename = src
+    # Try exact filename match first
+    if filename in LOGO_NETWORK_MAP:
+        return LOGO_NETWORK_MAP[filename]
+    # Fall back to substring match
     for key, name in LOGO_NETWORK_MAP.items():
         if key in src:
             return name
-    return "Unknown"  # Don't guess from filenames — return Unknown if not mapped
+    return "Unknown"
 
 def parse_msm_cards(html, contract_months):
     """
