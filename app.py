@@ -125,7 +125,7 @@ def fetch_with_scrapingbee(url, api_key, wait_ms=8000, js_snippet=None):
 
 # Map logo image filenames to network names
 LOGO_NETWORK_MAP = {
-    "3.png": "Three", "three": "Three",
+    "/3.": "Three", "/3/": "Three", "three": "Three",
     "vodafone": "Vodafone",
     "smarty": "SMARTY",
     "talkmobile": "TalkMobile", "talk-mobile": "TalkMobile",
@@ -134,8 +134,10 @@ LOGO_NETWORK_MAP = {
     "lebara": "Lebara",
     "giffgaff": "GiffGaff",
     "spusu": "Spusu",
-    "o2": "O2",
+    "/o2": "O2", "o2.png": "O2",
     "sky": "Sky",
+    "tesco": "Tesco", "asda": "Asda",
+    "virginmobile": "Virgin", "virgin": "Virgin",
 }
 
 def network_from_logo(img_src):
@@ -144,9 +146,7 @@ def network_from_logo(img_src):
     for key, name in LOGO_NETWORK_MAP.items():
         if key in src:
             return name
-    # Try extracting filename
-    fname = src.split("/")[-1].split(".")[0].split("?")[0]
-    return fname.title() if fname else "Unknown"
+    return "Unknown"  # Don't guess from filenames — return Unknown if not mapped
 
 def parse_msm_cards(html, contract_months):
     """
@@ -173,12 +173,17 @@ def parse_msm_cards(html, contract_months):
 
         try:
             # 1. Network from logo img src
-            logo_match = re.search(r'providers/[^"]+/([^"?]+)', card)
+            # Try logo URL first
+            logo_match = re.search(r'providers/[^"]+', card)
             if logo_match:
                 network = network_from_logo(logo_match.group(0))
             else:
+                network = "Unknown"
+            # If still unknown, try alt text or any img src
+            if network == "Unknown":
                 img_match = re.search(r'<img[^>]+src="([^"]+)"', card)
-                network = network_from_logo(img_match.group(1)) if img_match else "Unknown"
+                if img_match:
+                    network = network_from_logo(img_match.group(1))
 
             # 2. Data from deal__col--data-allowance section
             data_section = re.search(r'deal__col--data-allowance.*?deal-info__value--highlight[^>]*>([^<]+)<', card, re.DOTALL)
